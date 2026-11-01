@@ -1,0 +1,36 @@
+# Security & Credentials (NEVER COMMIT)
+.env
+ig_session.json
+*.session
+*.token
+
+# Databases & Cache
+*.db
+*.sqlite
+*.sqlite3
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Media Files & Large Assets
+*.mp4
+*.mp3
+*.wav
+*.m4a
+*.jpg
+*.jpeg
+*.png
+*.gif
+temp/
+output/*
+!output/.gitkeep
+assets/backgrounds/*
+!assets/backgrounds/.gitkeep
+
+# Environments & IDEs
+venv/
+env/
+.venv/
+.idea/
+.vscode/
+*.swp
