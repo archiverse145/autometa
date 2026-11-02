@@ -33,5 +33,6 @@ IG_ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN", "")
 IG_USERNAME = os.getenv("IG_USERNAME", "")
 IG_PASSWORD = os.getenv("IG_PASSWORD", "")
 
-# Voice settings (natural, authoritative voice)
+# Voice settings (natural, authoritative voice, slightly faster for Reels)
 DEFAULT_VOICE = "en-US-ChristopherNeural"
+SPEECH_RATE = "+25%"  # 1.25x spoken speed; captions stay aligned with TTS timestamps

@@ -1,7 +1,7 @@
 import asyncio
 import edge_tts
 from pathlib import Path
-from config import TEMP_DIR, DEFAULT_VOICE
+from config import TEMP_DIR, DEFAULT_VOICE, SPEECH_RATE
 
 def srt_to_ass(srt_content: str, ass_path: Path):
     """
@@ -69,7 +69,7 @@ async def generate_voice_and_subtitles(text: str, voice: str = DEFAULT_VOICE, pr
     srt_path = TEMP_DIR / f"{prefix}_subs.srt"
     ass_path = TEMP_DIR / f"{prefix}_subs.ass"
 
-    communicate = edge_tts.Communicate(text, voice)
+    communicate = edge_tts.Communicate(text, voice, rate=SPEECH_RATE)
     submaker = edge_tts.SubMaker()
 
     with open(audio_path, "wb") as f:
