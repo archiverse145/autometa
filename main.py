@@ -16,13 +16,29 @@ from config import OUTPUT_DIR, IG_USERNAME, IG_PASSWORD, IG_USER_ID, IG_ACCESS_T
 from database import init_db, save_rendered_reel, mark_reel_published
 from ingestion import extract_from_video_url, generate_script_with_ai
 from voiceover import generate_voice_and_subtitles
-from broll import get_broll_clips
-from video_engine import compose_reel
+from broll import get_broll_clips, pick_background_style
+from video_engine import compose_reel, get_media_duration
 from ig_publisher import publish_reel_to_instagram
 from ig_direct_publisher import upload_reel_and_logout
 from feedback_agent import analyze_audience_preferences, sync_instagram_insights
 
-async def run_pipeline(content_input: str, is_url: bool = False, auto_publish: bool = False, verbatim: bool = False):
+def prompt_hook_and_story() -> tuple[str, str]:
+    print("\nEnter the Did you know hook first.")
+    print("Example: Did you know Gandhari was not blind in Mahabharata?")
+    hook = input("Hook > ").strip()
+    print("\nNow enter the story / explanation.")
+    story = input("Story > ").strip()
+    return hook, story
+
+
+async def run_pipeline(
+    content_input: str,
+    is_url: bool = False,
+    auto_publish: bool = False,
+    verbatim: bool = False,
+    hook: str | None = None,
+    bg_style: str = "auto",
+):
     print("=" * 60)
     print("🚀 STARTING AI VIDEO & INSTAGRAM AUTOMATION PIPELINE")
     print("=" * 60)
@@ -36,31 +52,50 @@ async def run_pipeline(content_input: str, is_url: bool = False, auto_publish: b
         extracted = extract_from_video_url(content_input)
         raw_text = extracted["text"]
         topic_title = extracted["title"]
+        hook_text = None
     else:
-        print(f"[1/6] Processing story text input...")
+        hook_text = (hook or "").strip() or None
         raw_text = content_input
-        topic_title = content_input[:40] + "..."
+        topic_title = (hook_text or content_input)[:80]
+        if hook_text:
+            print(f"[1/6] Hook: {hook_text}")
+            print(f"      Story: {content_input[:120]}{'...' if len(content_input) > 120 else ''}")
+        else:
+            print("[1/6] Processing story text input...")
 
     # 3. Pull audience feedback from past metrics to guide this generation
     print("[2/6] Loading audience preference intelligence...")
     learnings = analyze_audience_preferences()
 
     # 4. Generate Viral Script & Visual Keywords
-    print("[3/6] Generating script, b-roll search queries, and Instagram caption...")
-    script_data = generate_script_with_ai(raw_text, audience_learnings=learnings, verbatim=verbatim)
+    print("[3/6] Building narration (hook first, then story) and Instagram caption...")
+    script_data = generate_script_with_ai(
+        raw_text,
+        audience_learnings=learnings,
+        verbatim=verbatim,
+        hook=hook_text,
+    )
     print(f"      Title: {script_data['title']}")
     print(f"      Narration: {script_data['narration']}")
     print(f"      B-Roll Queries: {script_data['broll_queries']}")
+    chosen_bg = pick_background_style(bg_style)
+    print(f"      Background: {chosen_bg}" + (" at 2x" if chosen_bg == "satisfying" else ""))
 
     timestamp_prefix = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # 5. Generate Voiceover and Subtitles
     print("[4/6] Synthesizing human voiceover and burning karaoke subtitles...")
     voice_res = await generate_voice_and_subtitles(script_data["narration"], prefix=timestamp_prefix)
+    voice_duration = get_media_duration(Path(voice_res["audio_path"]))
 
     # 6. Fetch Visual B-Roll (Pexels / Synthetic 9:16 clips)
     print("[5/6] Fetching 9:16 vertical b-roll footage...")
-    clips = get_broll_clips(script_data["broll_queries"], total_duration=15.0, prefix=timestamp_prefix)
+    clips = get_broll_clips(
+        script_data["broll_queries"],
+        total_duration=max(8.0, voice_duration),
+        prefix=timestamp_prefix,
+        bg_style=chosen_bg,
+    )
 
     # 7. Render Final Video
     print("[6/6] Assembling and rendering final Reel with FFmpeg...")
@@ -118,7 +153,14 @@ async def run_pipeline(content_input: str, is_url: bool = False, auto_publish: b
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Autonomous AI Video & Instagram Pipeline")
-    parser.add_argument("--story", type=str, help="Raw story or script text to transform into a Reel")
+    parser.add_argument("--hook", type=str, help="The Did you know opening line, spoken first")
+    parser.add_argument("--story", type=str, help="The explanation that follows the hook")
+    parser.add_argument(
+        "--bg",
+        choices=["auto", "satisfying", "minecraft", "race"],
+        default="auto",
+        help="Background: satisfying (2x), minecraft, race, or auto-pick",
+    )
     parser.add_argument("--url", type=str, help="Video URL (YouTube/Shorts/etc.) to extract and recreate")
     parser.add_argument("--verbatim", action="store_true", help="Use the exact words provided without rewriting")
     parser.add_argument("--post-now", action="store_true", help="Explicitly authorize login and posting to Instagram")
@@ -160,14 +202,40 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if args.url:
-        asyncio.run(run_pipeline(args.url, is_url=True, auto_publish=args.post_now, verbatim=args.verbatim))
-    elif args.story:
-        asyncio.run(run_pipeline(args.story, is_url=False, auto_publish=args.post_now, verbatim=args.verbatim))
+        asyncio.run(run_pipeline(
+            args.url,
+            is_url=True,
+            auto_publish=args.post_now,
+            verbatim=args.verbatim,
+            bg_style=args.bg,
+        ))
+    elif args.story or args.hook:
+        hook = args.hook
+        story = args.story or ""
+        if hook and not story:
+            print("Hook received. Enter the story / explanation:")
+            story = input("Story > ").strip()
+        if not story:
+            print("[!] Need a story/explanation after the hook.")
+            sys.exit(1)
+        asyncio.run(run_pipeline(
+            story,
+            is_url=False,
+            auto_publish=args.post_now,
+            verbatim=args.verbatim,
+            hook=hook,
+            bg_style=args.bg,
+        ))
     else:
-        # Default demo run if no arguments passed
-        default_story = (
-            "In 1962, a massive fire started in an underground coal mine in Centralia, Pennsylvania. "
-            "To this day, over 60 years later, that fire is still burning under the town at over 1000 degrees, "
-            "and experts say it will burn for another 250 years."
-        )
-        asyncio.run(run_pipeline(default_story, is_url=False))
+        hook, story = prompt_hook_and_story()
+        if not story:
+            print("[!] Need a story/explanation after the hook.")
+            sys.exit(1)
+        asyncio.run(run_pipeline(
+            story,
+            is_url=False,
+            auto_publish=args.post_now,
+            verbatim=args.verbatim,
+            hook=hook,
+            bg_style=args.bg,
+        ))
